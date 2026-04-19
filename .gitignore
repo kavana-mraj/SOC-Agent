@@ -36,3 +36,4 @@ wheels/
 
 # PCAP files (optional - keep or remove based on your needs)
 # *.pcap
+cases/*

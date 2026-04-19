@@ -1,0 +1,281 @@
+SOC Agent — Complete System Notes
+
+  What This Is
+
+  Automated Security Operations Center (SOC) pipeline. Reads network packet captures (PCAPs), detects threats,
+  enriches with intel, makes decisions, and saves structured cases. LLM (NVIDIA GLM-5.1) powers
+  triage/investigation/decision; rule-based fallbacks exist if LLM fails.
+
+  ---
+  Full Data Flow
+
+  PCAP files
+      ↓
+  [detection_engine] → raw events + incident
+      ↓
+  [threat_intel]     → AbuseIPDB + OTX enrichment
+      ↓
+  [asset_context]    → hostname/owner/criticality lookup
+      ↓
+  [triage_agent]     → LLM decides: escalate / investigate / monitor
+      ↓
+  [investigation_agent] → LLM explains: what happened, why, containment steps
+      ↓
+  [decision_agent]   → LLM picks: action + confidence → auto vs human
+      ↓
+  [response_agent]   → executes or flags for human
+      ↓
+  [case_manager]     → saves JSON case file
+      ↓
+  [human_review]     → queue if needs analyst review
+
+  ---
+  Step-by-Step: Each Module
+
+  main.py
+
+  Entry point. Just calls run_soc().
+
+  ---
+  config.py
+
+  Defines which PCAP files to process. PCAP_OPTIONS = dict of name → file_path. All entries run unless you filter
+   manually.
+
+  PCAP_OPTIONS = {
+      "test1": "data/generated_ether.pcap",
+      "test2": "data/ssh_test.pcap",
+      ...
+  }
+
+  ---
+  soc_runner.py — Orchestrator
+
+  Runs the full pipeline in 3 phases:
+
+  Phase 1 — Detect: Loop every PCAP, parse packets, detect incidents. Collect all incidents.
+
+  Phase 2 — Deduplicate: If two PCAPs produce same (incident_type, src_ip), drop duplicates. Prevents processing
+  same attack twice.
+
+  Phase 3 — Pipeline per incident:
+  1. Threat intel enrichment
+  2. Asset context enrichment
+  3. Triage
+  4. Investigation
+  5. Decision
+  6. Response
+  7. Save case
+  8. If human review needed → queue it
+
+  ---
+  detection_engine.py — Threat Detector
+
+  generate_events(packets) — converts raw Scapy packets into dicts:
+  {"type": "network_connection", "src_ip": ..., "dst_ip": ..., "protocol": "TCP", "dst_port": 22, "flags": ...}
+
+  detect_incident(events) — applies 8 rules in priority order. Returns first match:
+
+  ┌──────────┬─────────────────────────────────┬────────────────────────────────────────────────┬─────────────┐
+  │ Priority │              Rule               │                    Trigger                     │  Severity   │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 1        │ ddos_syn_flood                  │ ≥100 SYN packets to same dst                   │ critical    │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 2        │ brute_force_ssh                 │ ≥5 packets to port 22 from same src            │ high        │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 3        │ brute_force_http                │ ≥20 packets to port 80/443/8080/8443           │ high        │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 4        │ port_scan                       │ ≥15 unique dst ports from one src              │ medium      │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 5        │ dns_tunneling                   │ ≥50 UDP:53 packets from one src                │ high        │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 6        │ repeated_suspicious_destination │ ≥3 hits to 8.8.8.8                             │ medium/high │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 7        │ lateral_movement                │ internal→internal on admin ports               │ high        │
+  │          │                                 │ (445,3389,RDP,etc.)                            │             │
+  ├──────────┼─────────────────────────────────┼────────────────────────────────────────────────┼─────────────┤
+  │ 8        │ suspicious_port_access          │ any port 22 connection                         │ medium      │
+  └──────────┴─────────────────────────────────┴────────────────────────────────────────────────┴─────────────┘
+
+  Each incident gets mitre_techniques added via mitre_mapping.py.
+
+  correlate_events() — groups incidents by shared src_ip. Not used in main pipeline yet.
+
+  ---
+  mitre_mapping.py — MITRE ATT&CK Tags
+
+  Static dict: incident_type → list of {id, name, tactic}. Each incident carries these for analyst context.
+  Example: brute_force_ssh → T1110.001 Password Guessing + T1021.004 SSH.
+
+  ---
+  threat_intel.py — IP Reputation
+
+  For each incident's src_ip and dst_ip, queries two external feeds:
+
+  AbuseIPDB (needs ABUSEIPDB_API_KEY): Returns abuse confidence score 0–100, report count, country, ISP.
+
+  OTX AlienVault (needs OTX_API_KEY): Returns pulse count (how many threat intel feeds flagged this IP), tags.
+
+  Scoring formula:
+  threat_score = (abuseipdb_score × 0.7) + (otx_binary × 50 × 0.3)
+  - ≥70 → malicious
+  - ≥30 → suspicious
+  - <30 → clean
+
+  Private IPs (RFC1918) skip lookup automatically.
+
+  Output added to incident: threat_intel_verdict, max_threat_score
+
+  ---
+  asset_context.py — Who Owns That IP?
+
+  Looks up IP in asset_db.json (or built-in defaults). Returns:
+  - hostname, owner, criticality (low/medium/high/critical), role
+  - recent_incidents — last 5 cases involving this IP (reads case files)
+
+  Built-in known assets: gateway, workstations, web servers, DB, domain controller, Google DNS.
+
+  Output added to incident: max_asset_criticality
+
+  ---
+  triage_agent.py — Should We Act?
+
+  First tries LLM (ask_llm_json): Sends full incident JSON to GLM-5.1 with system prompt asking for decision,
+  reason, recommended_action, severity, confidence.
+
+  Fallback (rule-based) if LLM fails: lookup table mapping incident_type → (decision, severity, reason, action,
+  confidence).
+
+  Output:
+  {
+      "decision": "escalate",        # escalate / investigate / monitor
+      "severity": "high",
+      "confidence": 0.88,            # 0.0–1.0
+      "reason": "...",
+      "recommended_action": "..."
+  }
+
+  ---
+  investigation_agent.py — What Happened?
+
+  First tries LLM: Sends incident + related events (filtered to same src→dst pair, first 5 events). Asks for
+  summary, threat_indicators, attacker_hypothesis, recommended_containment, confidence.
+
+  Fallback: Rule table per incident_type with pre-written hypotheses and containment steps.
+
+  Output:
+  {
+      "summary": "SSH brute force from 1.2.3.4...",
+      "threat_indicators": ["Multiple failed auth", ...],
+      "attacker_hypothesis": "Automated credential attack",
+      "recommended_containment": ["Block source IP", ...],
+      "confidence": 0.80
+  }
+
+  ---
+  decision_agent.py — Auto or Human?
+
+  First tries LLM: Sends incident + triage + investigation. Asks for action, confidence, reasoning, auto_respond.
+
+  Fallback: Returns notify_analyst with confidence 0.5, requires human review.
+
+  Auto-respond gate: auto_respond = True only if confidence ≥ 0.85 AND LLM said auto is safe.
+
+  Actions available: block_ip, disable_user, create_ticket, notify_analyst, monitor_only
+
+  Key output fields:
+  - auto_respond: bool — can system act without human?
+  - requires_human_review: bool — inverse of auto_respond
+
+  ---
+  response_agent.py — Execute or Pend
+
+  Takes decision's action + auto_respond flag. Formats message. Returns:
+  - status: "executed" if auto
+  - status: "pending_human_approval" if not auto
+
+  Note: Currently no real enforcement — no actual firewall API calls. Simulated action only.
+
+  ---
+  case_manager.py — Case Storage
+
+  Saves full case as JSON to cases/case_<name>_<timestamp>.json.
+
+  Analyst tier assignment (auto-calculated):
+  - L3: critical severity OR confidence ≥ 0.90
+  - L2: high severity OR confidence ≥ 0.70
+  - L1: everything else
+
+  SLA deadlines:
+  - L3: 30 minutes
+  - L2: 2 hours
+  - L1: 4 hours
+
+  Priority score formula:
+  priority = (severity_rank × 25) + (confidence × 40) + (threat_score × 0.35)
+
+  Case JSON contains: incident, triage, investigation, decision, response, threat_intel, asset_context, SLA info,
+   priority, escalation history, evidence list, analyst notes, status history.
+
+  Extra functions: update_status(), add_note(), attach_evidence(), escalate_case(), get_sla_status(),
+  list_cases()
+
+  ---
+  human_review.py — Review Queue
+
+  When decision.requires_human_review = True, case goes into cases/review_queue.json.
+
+  Queue entries have: status: "pending", analyst_tier, full incident/triage/investigation/decision data,
+  analyst_decision, analyst_notes, evidence, escalation_history.
+
+  Functions: approve(), reject(), add_evidence(), escalate() (L1→L2→L3), list_pending(), list_by_tier()
+
+  ---
+  llm_connector.py — LLM Interface
+
+  Uses NVIDIA's API endpoint (integrate.api.nvidia.com/v1) with OpenAI SDK, model z-ai/glm-5.1.
+
+  ask_llm(system, user) — raw text response.
+
+  ask_llm_json(system, user) — forces JSON response, strips markdown code fences, parses. Returns None on failure
+   (agents fall back to rule-based).
+
+  Requires: NVIDIA_API_KEY in .env or shell env.
+
+  ---
+  Key Design Decisions
+
+  ┌────────────────────────────────────────────┬────────────────────────────────────────────────────────────┐
+  │                  Decision                  │                            Why                             │
+  ├────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ LLM first, rules fallback                  │ LLM adds reasoning; rules ensure pipeline never crashes    │
+  ├────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ Confidence threshold 0.85 for auto-respond │ Conservative — prefers human review over wrong auto-action │
+  ├────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ Deduplicate by (type, src_ip)              │ Same attacker across multiple PCAPs = one case, not N      │
+  ├────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ MITRE tags on every incident               │ Gives analysts immediate framework context                 │
+  ├────────────────────────────────────────────┼────────────────────────────────────────────────────────────┤
+  │ Tier assignment from severity+confidence   │ High confidence low-severity still may need L2             │
+  └────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+                                          
+  ---
+  What's NOT Implemented Yet                                                                                     
+                            
+  - No real enforcement — block_ip prints a message, doesn't call firewall/EDR API                               
+  - No feedback loop (feedback_loop.py exists but not wired)
+  - No API server (api.py exists but not wired)
+  - No frontend (frontend/ folder exists, unused)
+  - No log ingestor (log_ingestor.py exists, not in pipeline)                                                    
+  - ACTIVE_PCAP in config.py is unused — all PCAPs run                                                           
+                                                                                                                 
+  ---                                                                                                            
+  Running It                                                                                                     
+                                                                                                                 
+  # needs .env with NVIDIA_API_KEY                                                                               
+  cp .env.example .env                                                                                           
+  # edit .env                             
+
+  python main.py                                                                                                 
+  # cases saved to cases/case_*.json
+  # review queue at cases/review_queue.json  

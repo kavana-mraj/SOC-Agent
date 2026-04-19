@@ -1,52 +1,69 @@
 from openai import OpenAI
 import os
-import sys
+import json
 
-_USE_COLOR = sys.stdout.isatty() and os.getenv("NO_COLOR") is None
-_REASONING_COLOR = "\033[90m" if _USE_COLOR else ""
-_RESET_COLOR = "\033[0m" if _USE_COLOR else ""
+# load .env if python-dotenv available, else rely on shell env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-# Initialize OpenAI client with API key from environment
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+print("[llm_connector] module imported. NVIDIA_API_KEY present:", bool(os.getenv("NVIDIA_API_KEY")))
+
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        api_key = os.getenv("NVIDIA_API_KEY")
+        print("[llm_connector] _get_client: NVIDIA_API_KEY present:", bool(api_key))
+        if not api_key:
+            raise RuntimeError("NVIDIA_API_KEY not set in environment or .env")
+        print("[llm_connector] creating OpenAI client")
+        _client = OpenAI(
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key=api_key
+        )
+    return _client
+
+MODEL = "z-ai/glm-5.1"
 
 def ask_llm(system_prompt, user_prompt):
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+    print(f"[llm_connector] ask_llm: model={MODEL}, system_len={len(system_prompt)}, user_len={len(user_prompt)}")
+    response = _get_client().chat.completions.create(
+        model=MODEL,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ],
         temperature=0
     )
-
-    return response.choices[0].message.content
-
-
-# Initialize NVIDIA client with API key from environment
-nvidia_client = OpenAI(
-  base_url = "https://integrate.api.nvidia.com/v1",
-  api_key = os.getenv("NVIDIA_API_KEY")
-)
+    content = response.choices[0].message.content
+    print("[llm_connector] ask_llm: response_len=", len(content), "snippet=", content[:200].replace("\n"," "))
+    return content
 
 
-completion = client.chat.completions.create(
-  model="z-ai/glm-5.1",
-  messages=[{"role":"user","content":""}],
-  temperature=1,
-  top_p=1,
-  max_tokens=16384,
-  extra_body={"chat_template_kwargs":{"enable_thinking":True,"clear_thinking":False}},
-  stream=True
-)
-
-for chunk in completion:
-  if not getattr(chunk, "choices", None):
-    continue
-  if len(chunk.choices) == 0 or getattr(chunk.choices[0], "delta", None) is None:
-    continue
-  delta = chunk.choices[0].delta
-  reasoning = getattr(delta, "reasoning_content", None)
-  if reasoning:
-    print(f"{_REASONING_COLOR}{reasoning}{_RESET_COLOR}", end="")
-  if getattr(delta, "content", None) is not None:
-    print(delta.content, end="")
+def ask_llm_json(system_prompt, user_prompt):
+    """Ask LLM, extract JSON from response. Returns dict or None on failure."""
+    prompt = user_prompt + "\n\nRespond with valid JSON only. No markdown, no explanation."
+    print(f"[llm_connector] ask_llm_json: model={MODEL}, system_len={len(system_prompt)}, prompt_len={len(prompt)}")
+    response = _get_client().chat.completions.create(
+        model=MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0
+    )
+    content = response.choices[0].message.content.strip()
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+    print("[llm_connector] ask_llm_json: raw_content_snippet=", content[:200].replace("\n"," "))
+    try:
+        return json.loads(content.strip())
+    except (json.JSONDecodeError, KeyError):
+        print("[llm_connector] ask_llm_json: JSON parse failed")
+        return None

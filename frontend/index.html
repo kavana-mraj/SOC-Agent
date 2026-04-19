@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC Agent Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --danger: #f85149; --warn: #d29922; --ok: #3fb950;
+    --critical: #f85149; --high: #d29922; --medium: #58a6ff; --low: #3fb950;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Layout */
+  #app { display: flex; height: 100vh; }
+  nav { width: 200px; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; flex-shrink: 0; }
+  nav h1 { font-size: 13px; font-weight: 700; color: var(--muted); padding: 0 16px 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+  nav button { display: block; width: 100%; text-align: left; background: none; border: none; color: var(--text); padding: 8px 16px; cursor: pointer; font-size: 13px; border-left: 3px solid transparent; }
+  nav button:hover { background: rgba(255,255,255,0.04); }
+  nav button.active { border-left-color: var(--accent); color: var(--accent); background: rgba(88,166,255,0.06); }
+  main { flex: 1; overflow-y: auto; padding: 24px; }
+
+  /* Pages */
+  .page { display: none; } .page.active { display: block; }
+
+  /* Headings */
+  h2 { font-size: 18px; margin-bottom: 16px; }
+  h3 { font-size: 14px; margin-bottom: 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Stat cards */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-critical { background: rgba(248,81,73,0.15); color: var(--critical); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-high { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-medium { background: rgba(88,166,255,0.15); color: var(--accent); border: 1px solid rgba(88,166,255,0.4); }
+  .badge-low { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-l3 { background: rgba(248,81,73,0.15); color: var(--critical); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-l2 { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-l1 { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-open { background: rgba(88,166,255,0.15); color: var(--accent); border: 1px solid rgba(88,166,255,0.4); }
+  .badge-pending { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-resolved, .badge-approved, .badge-closed { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-rejected { background: rgba(248,81,73,0.15); color: var(--critical); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-malicious { background: rgba(248,81,73,0.15); color: var(--critical); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-suspicious { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-clean { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-breached { background: rgba(248,81,73,0.15); color: var(--critical); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-at_risk { background: rgba(210,153,34,0.15); color: var(--warn); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-on_track { background: rgba(63,185,80,0.15); color: var(--ok); border: 1px solid rgba(63,185,80,0.4); }
+  .mitre-badge { display: inline-block; margin: 2px; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.3); color: var(--accent); }
+
+  /* Case detail */
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .detail-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .detail-card h3 { margin-bottom: 12px; }
+  .kv { display: flex; gap: 8px; margin-bottom: 6px; }
+  .kv .k { color: var(--muted); min-width: 140px; flex-shrink: 0; }
+  .kv .v { word-break: break-all; }
+  ul.indicators { list-style: none; padding: 0; }
+  ul.indicators li { padding: 4px 0; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  ul.indicators li:last-child { border: none; }
+
+  /* Pipeline */
+  #pipeline-output { background: #0a0e13; border: 1px solid var(--border); border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; height: 400px; overflow-y: auto; white-space: pre-wrap; color: #adbac7; margin-top: 16px; }
+
+  /* Buttons */
+  .btn { padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-success { background: var(--ok); color: #000; }
+  .btn-success:hover { opacity: 0.85; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { opacity: 0.85; }
+  .btn-warn { background: var(--warn); color: #000; }
+  .btn-warn:hover { opacity: 0.85; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+  /* Form */
+  textarea, input[type=text], select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 8px; font-size: 13px; width: 100%; }
+  textarea { resize: vertical; min-height: 80px; }
+  .form-row { margin-bottom: 12px; }
+  label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 12px; }
+
+  /* Threat intel panel */
+  .intel-block { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .intel-ip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .score-bar { height: 6px; border-radius: 3px; background: var(--border); margin: 6px 0; }
+  .score-fill { height: 100%; border-radius: 3px; }
+
+  /* Misc */
+  .empty { color: var(--muted); text-align: center; padding: 32px; }
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .refresh-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .refresh-btn:hover { color: var(--text); border-color: var(--text); }
+  .back-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 13px; margin-bottom: 16px; padding: 0; }
+  .back-btn:hover { text-decoration: underline; }
+
+  /* Scrollable panel */
+  .scroll-panel { max-height: 300px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav>
+    <h1>SOC Agent</h1>
+    <button class="active" onclick="navigate('dashboard')">Dashboard</button>
+    <button onclick="navigate('cases')">Cases</button>
+    <button onclick="navigate('review')">Review Queue</button>
+    <button onclick="navigate('ingest')">Ingest Logs</button>
+    <button onclick="navigate('pipeline')">Run Pipeline</button>
+    <button onclick="navigate('feedback')">Rule Feedback</button>
+  </nav>
+  <main>
+    <!-- Dashboard -->
+    <div id="page-dashboard" class="page active">
+      <div class="section-header">
+        <h2>Dashboard</h2>
+        <button class="refresh-btn" onclick="loadDashboard()">Refresh</button>
+      </div>
+      <div class="stats-grid" id="stats-grid"></div>
+      <h3>Recent Cases</h3>
+      <div class="table-wrap"><table id="recent-cases-table">
+        <thead><tr><th>Case ID</th><th>Type</th><th>Severity</th><th>Tier</th><th>Status</th><th>SLA</th><th>Threat Intel</th><th>Time</th></tr></thead>
+        <tbody id="recent-cases-body"></tbody>
+      </table></div>
+    </div>
+
+    <!-- Cases -->
+    <div id="page-cases" class="page">
+      <div id="cases-list-view">
+        <div class="section-header">
+          <h2>All Cases</h2>
+          <button class="refresh-btn" onclick="loadCases()">Refresh</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Case ID</th><th>Type</th><th>Severity</th><th>Tier</th><th>Status</th><th>Priority</th><th>SLA</th><th>Actions</th></tr></thead>
+          <tbody id="cases-body"></tbody>
+        </table></div>
+      </div>
+      <div id="case-detail-view" style="display:none;"></div>
+    </div>
+
+    <!-- Review Queue -->
+    <div id="page-review" class="page">
+      <div id="review-list-view">
+        <div class="section-header">
+          <h2>Review Queue</h2>
+          <button class="refresh-btn" onclick="loadReview()">Refresh</button>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Case ID</th><th>Type</th><th>Severity</th><th>Tier</th><th>Decision</th><th>Confidence</th><th>Queued</th><th>Actions</th></tr></thead>
+          <tbody id="review-body"></tbody>
+        </table></div>
+      </div>
+      <div id="review-detail-view" style="display:none;"></div>
+    </div>
+
+    <!-- Ingest Logs -->
+    <div id="page-ingest" class="page">
+      <h2>Ingest Logs</h2>
+      <p style="color:var(--muted);margin-bottom:20px">Upload a log file or CSV. Pipeline runs automatically and creates a case.</p>
+
+      <div class="detail-card" style="max-width:680px;margin-bottom:24px">
+        <div id="drop-zone" style="border:2px dashed var(--border);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s"
+             ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+             ondragleave="this.style.borderColor='var(--border)'"
+             ondrop="handleDrop(event)">
+          <div style="font-size:32px;margin-bottom:8px">📂</div>
+          <div style="color:var(--muted);margin-bottom:12px">Drag & drop file here, or click to browse</div>
+          <div style="color:var(--muted);font-size:11px">Supported: .csv  .log  .txt  .json  .pcap  .pcapng  (max 50 MB)</div>
+          <input type="file" id="file-input" style="display:none"
+                 accept=".csv,.log,.txt,.json,.pcap,.pcapng"
+                 onchange="fileSelected(this.files[0])">
+          <button class="btn btn-primary" style="margin-top:12px" onclick="document.getElementById('file-input').click()">Browse File</button>
+        </div>
+
+        <div id="file-info" style="display:none;margin-top:12px;padding:10px;background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.2);border-radius:6px">
+          <span id="file-name" style="font-weight:600"></span>
+          <span id="file-size" style="color:var(--muted);font-size:12px;margin-left:8px"></span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
+          <div class="form-row">
+            <label>Source Type</label>
+            <select id="source-type-select">
+              <option value="auto">Auto-detect (recommended)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Source Name (optional label)</label>
+            <input type="text" id="source-name-input" placeholder="e.g. botsv3_network">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="ingest-btn" onclick="submitIngest()" disabled style="margin-top:4px;width:100%">
+          Upload &amp; Analyze
+        </button>
+      </div>
+
+      <!-- Progress + log stream -->
+      <div id="ingest-progress" style="display:none;margin-bottom:16px">
+        <div style="color:var(--muted);margin-bottom:8px"><span id="ingest-spinner">⏳</span> Running pipeline...</div>
+        <pre id="ingest-log" style="background:#0a0e13;border:1px solid var(--border);border-radius:8px;padding:12px;font-family:monospace;font-size:12px;height:220px;overflow-y:auto;white-space:pre-wrap;color:#adbac7;margin:0"></pre>
+      </div>
+
+      <!-- Result -->
+      <div id="ingest-result" style="display:none"></div>
+
+      <!-- Format reference -->
+      <div class="detail-card" style="max-width:680px">
+        <h3>Supported Formats &amp; Example CSVs</h3>
+        <div style="margin-top:10px">
+          <div style="margin-bottom:14px">
+            <strong style="font-size:12px">Generic CSV</strong>
+            <div style="color:var(--muted);font-size:11px;margin:4px 0">Any CSV with src_ip + dst_ip columns (flexible aliases)</div>
+            <pre style="background:#0a0e13;padding:8px;border-radius:4px;font-size:11px;overflow-x:auto">src_ip,dst_ip,dst_port,protocol
+192.168.1.10,185.220.101.5,443,TCP
+10.0.0.5,10.0.0.20,445,TCP</pre>
+          </div>
+          <div style="margin-bottom:14px">
+            <strong style="font-size:12px">Splunk stream:tcp SPL export</strong>
+            <pre style="background:#0a0e13;padding:8px;border-radius:4px;font-size:11px;overflow-x:auto">index=botsv3 sourcetype=stream:tcp
+| table _time,src_ip,dest_ip,dest_port,transport,bytes_in,bytes_out
+| outputcsv botsv3_tcp.csv</pre>
+          </div>
+          <div style="margin-bottom:14px">
+            <strong style="font-size:12px">AWS VPC Flow Log</strong>
+            <pre style="background:#0a0e13;padding:8px;border-radius:4px;font-size:11px;overflow-x:auto">version account-id interface-id srcaddr dstaddr srcport dstport protocol ...
+2 123456789 eni-xxx 10.0.1.5 52.86.1.1 54321 443 6 ...</pre>
+          </div>
+          <div>
+            <strong style="font-size:12px">iptables / firewall log</strong>
+            <pre style="background:#0a0e13;padding:8px;border-radius:4px;font-size:11px;overflow-x:auto">Apr 19 10:01:23 fw kernel: SRC=192.168.1.5 DST=8.8.8.8 PROTO=TCP DPT=53</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline -->
+    <div id="page-pipeline" class="page">
+      <h2>Run Pipeline</h2>
+      <p style="color:var(--muted);margin-bottom:16px;">Triggers the SOC pipeline against all configured PCAPs. Output streams below.</p>
+      <button class="btn btn-primary" id="run-btn" onclick="runPipeline()">Run Pipeline</button>
+      <div id="pipeline-output">Output will appear here...</div>
+    </div>
+
+    <!-- Feedback -->
+    <div id="page-feedback" class="page">
+      <div class="section-header">
+        <h2>Rule Performance Feedback</h2>
+        <button class="refresh-btn" onclick="loadFeedback()">Refresh</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Rule</th><th>Total</th><th>Auto</th><th>Approved</th><th>Rejected</th><th>Escalated</th><th>Avg Confidence</th><th>FP Rate</th><th>Suggestion</th></tr></thead>
+        <tbody id="feedback-body"></tbody>
+      </table></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = '';  // same origin
+
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+function badge(cls, text) { return `<span class="badge badge-${cls.toLowerCase().replace(/[^a-z0-9_]/g,'-')}">${text}</span>`; }
+function ts(iso) { if (!iso) return '—'; const d = new Date(iso); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(); }
+function mitreBadges(techniques) {
+  if (!techniques || !techniques.length) return '';
+  return techniques.map(t => `<span class="mitre-badge" title="${t.tactic}">${t.id}</span>`).join('');
+}
+function slaLabel(s) {
+  if (!s) return '—';
+  if (s.status === 'met') return badge('resolved', 'Met');
+  if (s.status === 'unknown' || s.remaining_minutes == null) return badge('open', 'Unknown');
+  if (s.status === 'breached') return badge('breached', `Breached ${Math.abs(s.remaining_minutes).toFixed(0)}m ago`);
+  if (s.status === 'at_risk') return badge('at_risk', `${s.remaining_minutes.toFixed(0)}m left`);
+  return badge('on_track', `${s.remaining_minutes.toFixed(0)}m left`);
+}
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  if (!r.ok) { const t = await r.text(); throw new Error(t); }
+  return r.json();
+}
+
+// ── Dashboard ────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const [stats, cases] = await Promise.all([
+    api('/api/cases/summary/stats').catch(() => ({})),
+    api('/api/cases').catch(() => [])
+  ]);
+  const sc = stats.severity_counts || {};
+  const tc = stats.tier_counts || {};
+  const stc = stats.status_counts || {};
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="label">Total Cases</div><div class="value">${stats.total||0}</div></div>
+    <div class="stat-card"><div class="label">Critical</div><div class="value" style="color:var(--critical)">${sc.critical||0}</div></div>
+    <div class="stat-card"><div class="label">High</div><div class="value" style="color:var(--warn)">${sc.high||0}</div></div>
+    <div class="stat-card"><div class="label">Open</div><div class="value" style="color:var(--accent)">${stc.open||0}</div></div>
+    <div class="stat-card"><div class="label">L3 Cases</div><div class="value" style="color:var(--critical)">${tc.L3||0}</div></div>
+    <div class="stat-card"><div class="label">L2 Cases</div><div class="value" style="color:var(--warn)">${tc.L2||0}</div></div>
+    <div class="stat-card"><div class="label">Resolved</div><div class="value" style="color:var(--ok)">${stc.resolved||0}</div></div>
+  `;
+  const body = document.getElementById('recent-cases-body');
+  body.innerHTML = cases.slice(0,20).map(c => {
+    const inc = c.incident || {};
+    const ti = c.threat_intel || {};
+    return `<tr style="cursor:pointer" onclick="showCaseDetail('${c.case_id}')">
+      <td><a href="#">${c.case_id}</a></td>
+      <td>${inc.incident_type||'—'}</td>
+      <td>${badge(inc.severity||'low', inc.severity||'—')}</td>
+      <td>${badge(c.analyst_tier||'l1', c.analyst_tier||'—')}</td>
+      <td>${badge(c.status||'open', c.status||'—')}</td>
+      <td>${slaLabel(c.sla_status)}</td>
+      <td>${badge(ti.overall_verdict||'clean', ti.overall_verdict||'clean')} ${ti.max_threat_score!=null?`<span style="color:var(--muted);font-size:11px">${ti.max_threat_score}</span>`:''}</td>
+      <td style="color:var(--muted);font-size:11px">${ts(c.timestamp)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty">No cases yet</td></tr>`;
+}
+
+// ── Cases ────────────────────────────────────────────────────────────────
+async function loadCases() {
+  const cases = await api('/api/cases').catch(() => []);
+  document.getElementById('cases-body').innerHTML = cases.map(c => {
+    const inc = c.incident || {};
+    return `<tr>
+      <td><a href="#" onclick="showCaseDetail('${c.case_id}');return false">${c.case_id}</a></td>
+      <td>${inc.incident_type||'—'}</td>
+      <td>${badge(inc.severity||'low', inc.severity||'—')}</td>
+      <td>${badge(c.analyst_tier||'l1', c.analyst_tier||'—')}</td>
+      <td>${badge(c.status||'open', c.status||'—')}</td>
+      <td>${c.priority_score||'—'}</td>
+      <td>${slaLabel(c.sla_status)}</td>
+      <td><button class="btn btn-sm btn-primary" onclick="showCaseDetail('${c.case_id}')">View</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty">No cases</td></tr>`;
+}
+
+async function showCaseDetail(caseId) {
+  navigate('cases');
+  const c = await api(`/api/cases/${caseId}`).catch(e => { alert(e); return null; });
+  if (!c) return;
+  document.getElementById('cases-list-view').style.display = 'none';
+  const inc = c.incident || {};
+  const ti = c.threat_intel || {};
+  const ac = c.asset_context || {};
+  const triage = c.triage_verdict || {};
+  const inv = c.investigation_result || {};
+  const dec = c.decision_result || {};
+  const resp = c.response_action || {};
+
+  const srcIntel = ti.src_ip || {};
+  const dstIntel = ti.dst_ip || {};
+  const srcAsset = ac.src_asset || {};
+  const dstAsset = ac.dst_asset || {};
+
+  function scoreBar(score) {
+    const color = score >= 70 ? 'var(--critical)' : score >= 30 ? 'var(--warn)' : 'var(--ok)';
+    return `<div class="score-bar"><div class="score-fill" style="width:${score}%;background:${color}"></div></div>`;
+  }
+
+  const mitre = (inc.mitre_techniques || []).map(t =>
+    `<span class="mitre-badge" title="${t.tactic}">${t.id} — ${t.name}</span>`).join(' ');
+
+  document.getElementById('case-detail-view').innerHTML = `
+    <button class="back-btn" onclick="document.getElementById('cases-list-view').style.display='';document.getElementById('case-detail-view').style.display='none'">← Back to Cases</button>
+    <div class="section-header">
+      <h2>${c.case_id}</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${badge(c.status||'open', c.status||'open')}
+        ${badge(c.analyst_tier||'L1', c.analyst_tier||'L1')}
+        <select id="status-select" style="width:auto">
+          ${['open','in_progress','resolved','closed'].map(s=>`<option ${c.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="updateStatus('${c.case_id}')">Update Status</button>
+        <button class="btn btn-sm btn-warn" onclick="escalateCase('${c.case_id}','${c.analyst_tier}')">Escalate</button>
+      </div>
+    </div>
+
+    <div class="detail-grid" style="margin-bottom:16px">
+      <div class="detail-card">
+        <h3>Incident</h3>
+        <div class="kv"><span class="k">Type</span><span class="v">${inc.incident_type||'—'}</span></div>
+        <div class="kv"><span class="k">Severity</span><span class="v">${badge(inc.severity||'low',inc.severity||'—')}</span></div>
+        <div class="kv"><span class="k">Src IP</span><span class="v">${inc.src_ip||'—'}</span></div>
+        <div class="kv"><span class="k">Dst IP</span><span class="v">${inc.dst_ip||'—'}</span></div>
+        <div class="kv"><span class="k">Priority Score</span><span class="v">${c.priority_score||'—'}</span></div>
+        <div class="kv"><span class="k">SLA Deadline</span><span class="v">${ts(c.sla_deadline)} ${slaLabel(c.sla_status)}</span></div>
+        <div style="margin-top:10px"><div style="margin-bottom:4px;color:var(--muted);font-size:11px">MITRE ATT&CK</div><div class="tag-list">${mitre||'—'}</div></div>
+      </div>
+      <div class="detail-card">
+        <h3>Triage → Investigation → Decision</h3>
+        <div class="kv"><span class="k">Triage Decision</span><span class="v">${triage.decision||'—'} (conf: ${triage.confidence?.toFixed(2)||'—'})</span></div>
+        <div class="kv"><span class="k">Severity (triage)</span><span class="v">${badge(triage.severity||'low',triage.severity||'—')}</span></div>
+        <div class="kv"><span class="k">Reason</span><span class="v">${triage.reason||'—'}</span></div>
+        <div class="kv"><span class="k">Hypothesis</span><span class="v">${inv.attacker_hypothesis||'—'}</span></div>
+        <div class="kv"><span class="k">Inv Confidence</span><span class="v">${inv.confidence?.toFixed(2)||'—'}</span></div>
+        <div class="kv"><span class="k">Decision Action</span><span class="v">${dec.action||'—'} (conf: ${dec.confidence?.toFixed(2)||'—'})</span></div>
+        <div class="kv"><span class="k">Auto Respond</span><span class="v">${dec.auto_respond?'Yes':'No'}</span></div>
+        <div class="kv"><span class="k">Response</span><span class="v">${resp.message||'—'}</span></div>
+      </div>
+    </div>
+
+    <div class="detail-grid" style="margin-bottom:16px">
+      <div class="detail-card">
+        <h3>Threat Intel</h3>
+        <div style="margin-bottom:8px">Overall: ${badge(ti.overall_verdict||'clean',ti.overall_verdict||'clean')} Score: <strong>${ti.max_threat_score||0}</strong></div>
+        <div class="intel-block">
+          <div class="intel-ip">
+            <strong style="font-size:12px">SRC: ${inc.src_ip||'—'}</strong>
+            ${srcIntel.private?'<div style="color:var(--muted);font-size:11px">Private IP</div>':
+              srcIntel.abuseipdb?`
+              <div class="kv"><span class="k">AbuseIPDB Score</span><span class="v">${srcIntel.abuseipdb.score||0}/100</span></div>
+              ${scoreBar(srcIntel.abuseipdb.score||0)}
+              <div class="kv"><span class="k">Reports</span><span class="v">${srcIntel.abuseipdb.reports||0}</span></div>
+              <div class="kv"><span class="k">Country</span><span class="v">${srcIntel.abuseipdb.country||'—'}</span></div>
+              <div class="kv"><span class="k">OTX Pulses</span><span class="v">${srcIntel.otx?.pulse_count||0}</span></div>
+              `:'<div style="color:var(--muted);font-size:11px">No API key</div>'}
+          </div>
+          <div class="intel-ip">
+            <strong style="font-size:12px">DST: ${inc.dst_ip||'—'}</strong>
+            ${dstIntel.private?'<div style="color:var(--muted);font-size:11px">Private IP</div>':
+              dstIntel.abuseipdb?`
+              <div class="kv"><span class="k">AbuseIPDB Score</span><span class="v">${dstIntel.abuseipdb.score||0}/100</span></div>
+              ${scoreBar(dstIntel.abuseipdb.score||0)}
+              <div class="kv"><span class="k">Reports</span><span class="v">${dstIntel.abuseipdb.reports||0}</span></div>
+              <div class="kv"><span class="k">Country</span><span class="v">${dstIntel.abuseipdb.country||'—'}</span></div>
+              <div class="kv"><span class="k">OTX Pulses</span><span class="v">${dstIntel.otx?.pulse_count||0}</span></div>
+              `:'<div style="color:var(--muted);font-size:11px">No API key</div>'}
+          </div>
+        </div>
+      </div>
+      <div class="detail-card">
+        <h3>Asset Context</h3>
+        <div class="intel-block">
+          <div class="intel-ip">
+            <strong style="font-size:12px">SRC Asset</strong>
+            <div class="kv"><span class="k">Hostname</span><span class="v">${srcAsset.hostname||'—'}</span></div>
+            <div class="kv"><span class="k">Owner</span><span class="v">${srcAsset.owner||'—'}</span></div>
+            <div class="kv"><span class="k">Role</span><span class="v">${srcAsset.role||'—'}</span></div>
+            <div class="kv"><span class="k">Criticality</span><span class="v">${badge(srcAsset.criticality||'low',srcAsset.criticality||'unknown')}</span></div>
+            <div class="kv"><span class="k">Known Asset</span><span class="v">${srcAsset.known_asset?'Yes':'No'}</span></div>
+          </div>
+          <div class="intel-ip">
+            <strong style="font-size:12px">DST Asset</strong>
+            <div class="kv"><span class="k">Hostname</span><span class="v">${dstAsset.hostname||'—'}</span></div>
+            <div class="kv"><span class="k">Owner</span><span class="v">${dstAsset.owner||'—'}</span></div>
+            <div class="kv"><span class="k">Role</span><span class="v">${dstAsset.role||'—'}</span></div>
+            <div class="kv"><span class="k">Criticality</span><span class="v">${badge(dstAsset.criticality||'low',dstAsset.criticality||'unknown')}</span></div>
+            <div class="kv"><span class="k">Known Asset</span><span class="v">${dstAsset.known_asset?'Yes':'No'}</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-grid" style="margin-bottom:16px">
+      <div class="detail-card">
+        <h3>Threat Indicators</h3>
+        <ul class="indicators">${(inv.threat_indicators||[]).map(i=>`<li>• ${i}</li>`).join('')||'<li>None</li>'}</ul>
+        <h3 style="margin-top:12px">Containment Steps</h3>
+        <ul class="indicators">${(inv.recommended_containment||[]).map(i=>`<li>• ${i}</li>`).join('')||'<li>None</li>'}</ul>
+      </div>
+      <div class="detail-card">
+        <h3>Analyst Notes</h3>
+        <div class="scroll-panel" style="margin-bottom:10px">${(c.analyst_notes||[]).map(n=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="color:var(--muted);font-size:11px">${ts(n.timestamp)} — ${n.analyst}</div><div>${n.note}</div></div>`).join('')||'<div style="color:var(--muted)">No notes yet</div>'}</div>
+        <div class="form-row"><textarea id="note-input" placeholder="Add analyst note..."></textarea></div>
+        <button class="btn btn-sm btn-primary" onclick="addNote('${c.case_id}')">Add Note</button>
+        <h3 style="margin-top:16px">Escalation History</h3>
+        ${(c.escalation_history||[]).map(e=>`<div style="padding:4px 0;font-size:12px;color:var(--muted)">${e.from_tier}→${e.to_tier}: ${e.reason} (${ts(e.timestamp)})</div>`).join('')||'<div style="color:var(--muted);font-size:12px">No escalations</div>'}
+      </div>
+    </div>
+  `;
+  document.getElementById('case-detail-view').style.display = 'block';
+}
+
+async function updateStatus(caseId) {
+  const status = document.getElementById('status-select').value;
+  await api(`/api/cases/${caseId}/status`, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status, actor: 'analyst'})
+  }).catch(e => alert(e));
+  showCaseDetail(caseId);
+}
+
+async function addNote(caseId) {
+  const note = document.getElementById('note-input').value.trim();
+  if (!note) return;
+  await api(`/api/cases/${caseId}/notes`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({note, analyst: 'analyst'})
+  }).catch(e => alert(e));
+  showCaseDetail(caseId);
+}
+
+async function escalateCase(caseId, currentTier) {
+  const reason = prompt(`Escalation reason (current tier: ${currentTier}):`);
+  if (!reason) return;
+  await api(`/api/cases/${caseId}/escalate`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({from_tier: currentTier, reason, actor: 'analyst'})
+  }).catch(e => alert('Escalation failed: ' + e));
+  showCaseDetail(caseId);
+}
+
+// ── Review Queue ─────────────────────────────────────────────────────────
+async function loadReview() {
+  const queue = await api('/api/review-queue').catch(() => []);
+  document.getElementById('review-body').innerHTML = queue.map(e => {
+    const inc = e.incident || {};
+    const dec = e.decision || {};
+    return `<tr>
+      <td><a href="#" onclick="showReviewDetail('${e.case_id}');return false">${e.case_id}</a></td>
+      <td>${inc.incident_type||'—'}</td>
+      <td>${badge(inc.severity||'low', inc.severity||'—')}</td>
+      <td>${badge(e.analyst_tier||'l1', e.analyst_tier||'—')}</td>
+      <td>${badge(e.status||'pending', e.status||'pending')}</td>
+      <td>${dec.confidence?.toFixed(2)||'—'}</td>
+      <td style="color:var(--muted);font-size:11px">${ts(e.queued_at)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-sm btn-success" onclick="reviewAction('${e.case_id}','approve')">Approve</button>
+        <button class="btn btn-sm btn-danger" onclick="reviewAction('${e.case_id}','reject')">Reject</button>
+        <button class="btn btn-sm btn-warn" onclick="escalateReview('${e.case_id}','${e.analyst_tier}')">Escalate</button>
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty">No pending reviews</td></tr>`;
+}
+
+async function showReviewDetail(caseId) {
+  navigate('review');
+  const e = await api(`/api/review-queue/${caseId}`).catch(err => { alert(err); return null; });
+  if (!e) return;
+  document.getElementById('review-list-view').style.display = 'none';
+  const inc = e.incident || {};
+  const dec = e.decision || {};
+  const inv = e.investigation || {};
+  const mitre = (inc.mitre_techniques||[]).map(t=>`<span class="mitre-badge">${t.id} — ${t.name}</span>`).join(' ');
+
+  document.getElementById('review-detail-view').innerHTML = `
+    <button class="back-btn" onclick="document.getElementById('review-list-view').style.display='';document.getElementById('review-detail-view').style.display='none'">← Back to Queue</button>
+    <div class="section-header">
+      <h2>${caseId}</h2>
+      <div style="display:flex;gap:8px">
+        ${badge(e.status||'pending',e.status||'pending')}
+        ${badge(e.analyst_tier||'L1',e.analyst_tier||'L1')}
+      </div>
+    </div>
+    <div class="detail-grid" style="margin-bottom:16px">
+      <div class="detail-card">
+        <h3>Incident</h3>
+        <div class="kv"><span class="k">Type</span><span class="v">${inc.incident_type||'—'}</span></div>
+        <div class="kv"><span class="k">Severity</span><span class="v">${badge(inc.severity||'low',inc.severity||'—')}</span></div>
+        <div class="kv"><span class="k">Src → Dst</span><span class="v">${inc.src_ip||'—'} → ${inc.dst_ip||'—'}</span></div>
+        <div style="margin-top:8px"><div style="margin-bottom:4px;color:var(--muted);font-size:11px">MITRE</div><div class="tag-list">${mitre||'—'}</div></div>
+      </div>
+      <div class="detail-card">
+        <h3>Decision</h3>
+        <div class="kv"><span class="k">Action</span><span class="v">${dec.action||'—'}</span></div>
+        <div class="kv"><span class="k">Confidence</span><span class="v">${dec.confidence?.toFixed(2)||'—'}</span></div>
+        <div class="kv"><span class="k">Auto Respond</span><span class="v">${dec.auto_respond?'Yes':'No'}</span></div>
+        <div class="kv"><span class="k">Reasoning</span><span class="v">${dec.reasoning||'—'}</span></div>
+        <div class="kv"><span class="k">Hypothesis</span><span class="v">${inv.attacker_hypothesis||'—'}</span></div>
+      </div>
+    </div>
+    <div class="detail-card" style="margin-bottom:16px">
+      <h3>Approve / Reject</h3>
+      <div class="form-row"><label>Analyst Notes</label><textarea id="review-notes" placeholder="Reason for decision..."></textarea></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-success" onclick="reviewActionFromDetail('${caseId}','approve')">Approve</button>
+        <button class="btn btn-danger" onclick="reviewActionFromDetail('${caseId}','reject')">Reject</button>
+        <button class="btn btn-warn" onclick="escalateReview('${caseId}','${e.analyst_tier}')">Escalate</button>
+      </div>
+    </div>
+    <div class="detail-card">
+      <h3>Evidence</h3>
+      <div class="scroll-panel">${(e.evidence||[]).map(ev=>`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div style="color:var(--muted);font-size:11px">${ts(ev.timestamp)} — ${ev.analyst}</div><div>${ev.description}</div></div>`).join('')||'<div style="color:var(--muted)">No evidence attached</div>'}</div>
+    </div>
+  `;
+  document.getElementById('review-detail-view').style.display = 'block';
+}
+
+async function reviewAction(caseId, action) {
+  const notes = prompt(`${action} — add notes (optional):`) || '';
+  await api(`/api/review-queue/${caseId}/${action}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({analyst_notes: notes, analyst: 'analyst'})
+  }).catch(e => alert(e));
+  loadReview();
+}
+
+async function reviewActionFromDetail(caseId, action) {
+  const notes = document.getElementById('review-notes').value;
+  await api(`/api/review-queue/${caseId}/${action}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({analyst_notes: notes, analyst: 'analyst'})
+  }).catch(e => alert(e));
+  document.getElementById('review-list-view').style.display = '';
+  document.getElementById('review-detail-view').style.display = 'none';
+  loadReview();
+}
+
+async function escalateReview(caseId, currentTier) {
+  const reason = prompt(`Escalation reason (current tier: ${currentTier}):`);
+  if (!reason) return;
+  await api(`/api/review-queue/${caseId}/escalate`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({from_tier: currentTier, reason, actor: 'analyst'})
+  }).catch(e => alert('Failed: ' + e));
+  loadReview();
+}
+
+// ── Pipeline ──────────────────────────────────────────────────────────────
+async function runPipeline() {
+  const btn = document.getElementById('run-btn');
+  const out = document.getElementById('pipeline-output');
+  btn.disabled = true; btn.textContent = 'Running...';
+  out.textContent = '';
+
+  try {
+    const resp = await fetch(API + '/api/pipeline/run', {method:'POST'});
+    if (!resp.ok) { out.textContent = await resp.text(); return; }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      out.textContent += dec.decode(value);
+      out.scrollTop = out.scrollHeight;
+    }
+  } catch(e) { out.textContent += '\nError: ' + e; }
+  finally { btn.disabled = false; btn.textContent = 'Run Pipeline'; }
+}
+
+// ── Feedback ──────────────────────────────────────────────────────────────
+async function loadFeedback() {
+  const rows = await api('/api/feedback/rule-performance').catch(() => []);
+  document.getElementById('feedback-body').innerHTML = rows.map(r => {
+    const fpr = (r.false_positive_rate * 100).toFixed(0);
+    const fprColor = r.false_positive_rate > 0.2 ? 'var(--critical)' : r.false_positive_rate > 0.1 ? 'var(--warn)' : 'var(--ok)';
+    return `<tr>
+      <td>${r.rule}</td>
+      <td>${r.total_cases}</td>
+      <td>${r.auto_resolved}</td>
+      <td>${r.human_approved}</td>
+      <td>${r.human_rejected}</td>
+      <td>${r.escalated}</td>
+      <td>${r.avg_confidence.toFixed(2)}</td>
+      <td style="color:${fprColor}">${fpr}%</td>
+      <td style="font-size:11px;color:var(--muted)">${r.suggested_threshold_adjustment}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="9" class="empty">No feedback data yet — close some cases first</td></tr>`;
+}
+
+// ── Ingest ────────────────────────────────────────────────────────────────
+let _selectedFile = null;
+
+async function loadSourceTypes() {
+  const data = await api('/api/ingest/source-types').catch(() => null);
+  if (!data) return;
+  const sel = document.getElementById('source-type-select');
+  sel.innerHTML = data.source_types.map(s =>
+    `<option value="${s.value}">${s.label}</option>`
+  ).join('');
+}
+
+function fileSelected(file) {
+  if (!file) return;
+  _selectedFile = file;
+  document.getElementById('file-info').style.display = 'block';
+  document.getElementById('file-name').textContent = file.name;
+  document.getElementById('file-size').textContent = `(${(file.size/1024/1024).toFixed(2)} MB)`;
+  document.getElementById('ingest-btn').disabled = false;
+  document.getElementById('ingest-result').style.display = 'none';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').style.borderColor = 'var(--border)';
+  const file = e.dataTransfer.files[0];
+  if (file) fileSelected(file);
+}
+
+async function submitIngest() {
+  if (!_selectedFile) return;
+  const btn = document.getElementById('ingest-btn');
+  btn.disabled = true; btn.textContent = 'Analyzing...';
+  const logEl = document.getElementById('ingest-log');
+  logEl.textContent = '';
+  document.getElementById('ingest-progress').style.display = 'block';
+  document.getElementById('ingest-result').style.display = 'none';
+
+  const fd = new FormData();
+  fd.append('file', _selectedFile);
+  fd.append('source_type', document.getElementById('source-type-select').value);
+  fd.append('source_name', document.getElementById('source-name-input').value);
+
+  try {
+    const resp = await fetch(API + '/api/ingest/upload-stream', {method: 'POST', body: fd});
+    if (!resp.ok) {
+      throw new Error(await resp.text());
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    let result = null;
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('__RESULT__')) {
+          try { result = JSON.parse(line.slice(10)); } catch(e) {}
+        } else if (line) {
+          logEl.textContent += line + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      }
+    }
+
+    document.getElementById('ingest-progress').style.display = 'none';
+    if (result) {
+      renderIngestResult(result);
+      // Auto-navigate to case detail if one was created
+      if (result.status === 'case_created' && result.case_id) {
+        setTimeout(() => {
+          navigate('cases');
+          showCaseDetail(result.case_id);
+        }, 1200);
+      }
+    }
+  } catch(e) {
+    document.getElementById('ingest-progress').style.display = 'none';
+    document.getElementById('ingest-result').innerHTML =
+      `<div style="color:var(--critical);padding:12px;background:rgba(248,81,73,0.1);border-radius:6px">Error: ${e}</div>`;
+    document.getElementById('ingest-result').style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Upload & Analyze';
+  }
+}
+
+function renderIngestResult(data) {
+  const el = document.getElementById('ingest-result');
+  el.style.display = 'block';
+
+  if (data.status === 'no_events') {
+    el.innerHTML = `<div style="background:rgba(210,153,34,0.1);border:1px solid rgba(210,153,34,0.3);border-radius:8px;padding:16px">
+      <strong style="color:var(--warn)">⚠ No events extracted</strong>
+      <div style="color:var(--muted);margin-top:6px">${data.message}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Detected format: ${data.detected_type} · File: ${data.filename}</div>
+    </div>`;
+    return;
+  }
+
+  if (data.status === 'no_incident') {
+    el.innerHTML = `<div style="background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px;padding:16px">
+      <strong style="color:var(--ok)">✓ Clean — No incident detected</strong>
+      <div style="color:var(--muted);margin-top:6px">${data.events_parsed} events parsed. No rules triggered.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">Detected format: ${data.detected_type}</div>
+    </div>`;
+    return;
+  }
+
+  const c = data.case || {};
+  const inc = c.incident || {};
+  const triage = c.triage_verdict || {};
+  const inv = c.investigation_result || {};
+  const dec = c.decision_result || {};
+  const resp = c.response_action || {};
+  const ti = c.threat_intel || {};
+  const mitre = (inc.mitre_techniques||[]).map(t =>
+    `<span class="mitre-badge" title="${t.tactic}">${t.id} — ${t.name}</span>`).join(' ');
+
+  el.innerHTML = `
+    <div style="background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.3);border-radius:8px;padding:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <strong style="color:var(--critical);font-size:16px">⚠ Incident Detected</strong>
+        <div style="color:var(--muted);font-size:12px;margin-top:4px">${data.events_parsed} events parsed · Format: ${data.detected_type} · File: ${data.filename}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="showCaseDetail('${data.case_id}');navigate('cases')">View Full Case →</button>
+    </div>
+
+    <div class="detail-grid" style="max-width:900px">
+      <div class="detail-card">
+        <h3>Incident</h3>
+        <div class="kv"><span class="k">Type</span><span class="v">${inc.incident_type||'—'}</span></div>
+        <div class="kv"><span class="k">Severity</span><span class="v">${badge(inc.severity||'low',inc.severity||'—')}</span></div>
+        <div class="kv"><span class="k">Src IP</span><span class="v">${inc.src_ip||'—'}</span></div>
+        <div class="kv"><span class="k">Dst IP</span><span class="v">${inc.dst_ip||'—'}</span></div>
+        <div class="kv"><span class="k">Tier Assigned</span><span class="v">${badge(c.analyst_tier||'L1', c.analyst_tier||'L1')}</span></div>
+        <div class="kv"><span class="k">SLA</span><span class="v">${slaLabel(c.sla_status)}</span></div>
+        <div class="kv"><span class="k">Priority Score</span><span class="v">${c.priority_score||'—'}</span></div>
+        <div style="margin-top:10px"><div style="color:var(--muted);font-size:11px;margin-bottom:4px">MITRE ATT&CK</div><div class="tag-list">${mitre||'—'}</div></div>
+      </div>
+      <div class="detail-card">
+        <h3>Pipeline Results</h3>
+        <div class="kv"><span class="k">Triage</span><span class="v">${triage.decision||'—'} (conf: ${triage.confidence?.toFixed(2)||'—'})</span></div>
+        <div class="kv"><span class="k">Hypothesis</span><span class="v">${inv.attacker_hypothesis||'—'}</span></div>
+        <div class="kv"><span class="k">Decision</span><span class="v">${dec.action||'—'} (conf: ${dec.confidence?.toFixed(2)||'—'})</span></div>
+        <div class="kv"><span class="k">Auto Respond</span><span class="v">${dec.auto_respond?'Yes':'No'}</span></div>
+        <div class="kv"><span class="k">Response</span><span class="v">${resp.message||'—'}</span></div>
+        <div class="kv"><span class="k">Threat Intel</span><span class="v">${badge(ti.overall_verdict||'clean',ti.overall_verdict||'clean')} score: ${ti.max_threat_score||0}</span></div>
+        <div style="margin-top:10px"><strong style="font-size:11px;color:var(--muted)">CONTAINMENT STEPS</strong>
+          <ul class="indicators" style="margin-top:6px">${(inv.recommended_containment||[]).map(s=>`<li>• ${s}</li>`).join('')||'<li>None</li>'}</ul>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── Navigation (updated to include ingest) ────────────────────────────────
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  const pages = ['dashboard','cases','review','ingest','pipeline','feedback'];
+  const idx = pages.indexOf(page);
+  if (idx >= 0) document.querySelectorAll('nav button')[idx].classList.add('active');
+  if (page === 'dashboard') loadDashboard();
+  if (page === 'cases') loadCases();
+  if (page === 'review') loadReview();
+  if (page === 'ingest') loadSourceTypes();
+  if (page === 'feedback') loadFeedback();
+}
+
+// Initial load
+loadDashboard();
+</script>
+</body>
+</html>

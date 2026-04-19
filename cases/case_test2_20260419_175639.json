@@ -1,0 +1,32 @@
+{
+    "timestamp": "2026-04-19T17:56:39.616061",
+    "source_name": "test2",
+    "incident": {
+        "incident_type": "suspicious_port_access",
+        "src_ip": "10.10.10.5",
+        "dst_ip": "192.168.1.20",
+        "dst_port": 22,
+        "severity": "medium"
+    },
+    "triage_verdict": {
+        "agent_name": "Triage Agent",
+        "decision": "investigate",
+        "reason": "Connection observed to SSH port 22",
+        "recommended_action": "Validate whether SSH access is authorized"
+    },
+    "investigation_result": {
+        "agent_name": "Investigation Agent",
+        "summary": "Found 3 related events between 10.10.10.5 and 192.168.1.20",
+        "related_events_count": 3,
+        "source_ip": "10.10.10.5",
+        "destination_ip": "192.168.1.20"
+    },
+    "response_action": {
+        "agent_name": "Response Agent",
+        "action": "assign_for_review",
+        "status": "pending_analysis",
+        "message": "Incident queued for analyst review: suspicious_port_access"
+    },
+    "priority_score": 2,
+    "decision_summary": "suspicious_port_access was reviewed by Triage Agent and the final action is assign_for_review"
+}

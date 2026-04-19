@@ -1,0 +1,32 @@
+{
+    "timestamp": "2026-04-19T17:56:39.614112",
+    "source_name": "test1",
+    "incident": {
+        "incident_type": "repeated_suspicious_destination",
+        "src_ip": "192.168.1.10",
+        "dst_ip": "8.8.8.8",
+        "total_hits": 5,
+        "severity": "high"
+    },
+    "triage_verdict": {
+        "agent_name": "Triage Agent",
+        "decision": "escalate",
+        "reason": "Multiple connections to suspicious destination detected",
+        "recommended_action": "Investigate source host and block destination if confirmed malicious"
+    },
+    "investigation_result": {
+        "agent_name": "Investigation Agent",
+        "summary": "Found 5 related events between 192.168.1.10 and 8.8.8.8",
+        "related_events_count": 5,
+        "source_ip": "192.168.1.10",
+        "destination_ip": "8.8.8.8"
+    },
+    "response_action": {
+        "agent_name": "Response Agent",
+        "action": "create_case",
+        "status": "ready",
+        "message": "Security case created for 192.168.1.10 communicating with 8.8.8.8"
+    },
+    "priority_score": 3,
+    "decision_summary": "repeated_suspicious_destination was reviewed by Triage Agent and the final action is create_case"
+}

@@ -1,8 +1,10 @@
 PCAP_OPTIONS = {
-    "test1": "data/generated_ether.pcap",
-    "test2": "data/ssh_test.pcap",
-    "test3": "data/benign_test.pcap",
-    "exercise_2026_02_28": "/home/karthik/Downloads/2026-02-28-traffic-analysis-exercise.pcap"
+    "ssh_brute_force": "data/ssh_brute_force.pcap",
+    "ddos_syn_flood": "data/ddos_syn_flood.pcap",
+    "port_scan": "data/port_scan.pcap",
+    "dns_tunneling": "data/dns_tunneling.pcap",
+    "lateral_movement": "data/lateral_movement.pcap",
+    "suspicious_dest": "data/suspicious_dest.pcap",
 }
 
-ACTIVE_PCAP = "exercise_2026_02_28"
+ACTIVE_PCAP = None  # None = run all

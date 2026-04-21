@@ -49,7 +49,7 @@ def save_case(incident, verdict, investigation, response, source_name, decision=
     priority = _priority_score(severity, avg_confidence, threat_score)
 
     case_data = {
-        "case_id": filename.split("/")[-1].replace(".json", ""),
+        "case_id": os.path.basename(filename).replace(".json", ""),
         "timestamp": timestamp.isoformat(),
         "source_name": source_name,
         "status": "open",

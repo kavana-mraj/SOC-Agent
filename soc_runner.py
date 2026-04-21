@@ -1,3 +1,4 @@
+import os
 from scapy.all import rdpcap
 from detection_engine import generate_events, detect_incident
 from triage_agent import triage_incident
@@ -8,6 +9,7 @@ from human_review import queue_for_review
 from case_manager import save_case
 from threat_intel import enrich_incident
 from asset_context import enrich_incident_assets
+from feedback_loop import ingest_closed_cases
 from config import PCAP_OPTIONS
 
 
@@ -101,8 +103,18 @@ def run_soc(pcap_options=None):
 
         # Human review queue
         if decision["requires_human_review"]:
-            case_id = saved_file.split("/")[-1].replace(".json", "")
+            case_id = os.path.basename(saved_file).replace(".json", "")
             queue_for_review(case_id, incident, verdict, investigation, decision)
             print(f"Queued for human review: {case_id}")
         else:
             print("Autonomous response executed — no human review needed")
+
+    # Phase 4: Update feedback loop stats from closed/resolved cases
+    print("\n===== Updating feedback stats =====")
+    try:
+        stats = ingest_closed_cases()
+        rule_count = len(stats.get("rules", {}))
+        print(f"Feedback loop: {rule_count} rules tracked, {len(stats.get('processed_cases', []))} cases processed")
+    except Exception as e:
+        print(f"Feedback loop update failed (non-fatal): {e}")
+
